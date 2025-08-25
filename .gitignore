@@ -1,5 +1,6 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[codz]
 
 # Environments
 .env
@@ -12,3 +13,6 @@ venv/
 
 # Visual Studio Code
 .vscode/
+
+# Data files
+data/
