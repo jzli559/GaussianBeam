@@ -230,6 +230,18 @@ class Beam:
         else: # Mode.SYMBOLIC
             self.q0_initial = sp.I * sp.pi * self.w0_initial**2 / self.wl_initial
 
+    def copy(self) -> "Beam":
+        """
+        Create a copy of the beam.
+
+        :return: a copy of the beam
+        :rtype: Beam
+        """
+
+        new_beam = Beam(self.wl_initial, self.w0_initial, self.mode)
+        new_beam.elements = self.elements.copy()
+        return new_beam
+
     # --- Elements ---
 
     def prop(self, d: float | sp.Symbol, n: float | sp.Symbol=1.0003) -> "Beam":
