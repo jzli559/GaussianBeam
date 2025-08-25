@@ -13,7 +13,7 @@ class Mode(Enum):
     NUMERIC = 0
     SYMBOLIC = 1
 
-class OpticalElement:
+class OpticalElement(ABC):
     def __init__(self, mode: Mode = Mode.NUMERIC):
         assert isinstance(mode, Mode), "mode must be an instance of Mode Enum"
 
