@@ -14,17 +14,39 @@ _prefixes = {
     "T": 12
 }
 
-def _add_unit(unit: str, allowed_prefixes: str):
+def _add_unit(unit: str, allowed_prefixes: str, bias: int = 0):
     for prefix, exp in _prefixes.items():
         if prefix in allowed_prefixes:
             name = unit if prefix == "_" else prefix + unit
-            globals()[name] = 10.0 ** exp
+            globals()[name] = 10.0 ** (exp + bias)
             __all__.append(name)
 
-_add_unit("s", "pnum_")
-_add_unit("Hz", "um_kMG")
 _add_unit("m", "fpnumc_k")
-_add_unit("rad", "num_")
+_add_unit("g", "num_k", bias=-3)
+_add_unit("s", "fpnum_")
+_add_unit("A", "num_")
+_add_unit("K", "num_")
+_add_unit("mol", "num_")
+_add_unit("cd", "num_")
+
+_add_unit("V", "num_k")
+_add_unit("Ohm", "num_kM")
+_add_unit("F", "pnum_")
+_add_unit("H", "pnum_")
+_add_unit("C", "pnum_")
+
+_add_unit("Hz", "um_kMG")
+_add_unit("rad", "um_")
+
+_add_unit("W", "num_")
+_add_unit("dBm", "_")
+
+_add_unit("J", "m_k")
+_add_unit("eV", "m_k")
+
+_add_unit("N", "m_k")
+_add_unit("Pa", "m_kM")
+_add_unit("psi", "_")
 
 if __name__ == "__main__":
     avail_units = []
