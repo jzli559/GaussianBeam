@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gaussianbeam"
+version = "0.1.0"
+description = "A Python toolkit for modeling Gaussian beam propagation using the ABCD matrix formalism. Supports symbolic (SymPy) and numeric (NumPy) calculations, abstracted optical elements, and intuitive chain-style propagation."
+readme = { file = "README.md", content-type = "text/markdown" }
+
+authors = [
+    { name = "Jiaze Li", email = "jiaze559@outlook.com" }
+]
+
+license = { text = "Apache-2.0" }
+
+keywords = ["physics", "AMO", "optics", "gaussian beam", "ray tracing", "ABCD matrix"]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.20",
+    "sympy>=1.10",
+]
+
+[project.optional-dependencies]
+dev = []
+doc = []
+
+[project.urls]
+Homepage = "https://github.com/jzli559/GaussianBeam"
+Repository = "https://github.com/jzli559/GaussianBeam.git"
+Issues = "https://github.com/jzli559/GaussianBeam/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["gaussianbeam*"]
