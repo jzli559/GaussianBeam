@@ -17,10 +17,12 @@ class ParamSpec:
     """Description of one editable element parameter."""
 
     name: str        # internal key used in ElementSpec.params
-    label: str       # label shown in the parameter form
+    label: str       # label shown in the parameter form (Qt rich text allowed)
     kind: str        # "length" | "index"
     default: float
-    allow_inf: bool = False  # whether the form offers an "infinity" checkbox
+    allow_inf: bool = False   # whether the form offers an "infinity" checkbox
+    allow_auto: bool = False  # whether the form offers an "auto" checkbox
+                              # (value None, used by the trailing free space)
 
 
 @dataclass(frozen=True)
@@ -51,22 +53,22 @@ ELEMENT_TYPES = {
             "ThickLens", "Thick lens (ThickLens)",
             (
                 ParamSpec("n", "Lens index n", "index", 1.5),
-                ParamSpec("R1", "Front radius R1", "length", 50e-3, allow_inf=True),
-                ParamSpec("R2", "Back radius R2", "length", -50e-3, allow_inf=True),
+                ParamSpec("R1", "Front radius R<sub>1</sub>", "length", 50e-3, allow_inf=True),
+                ParamSpec("R2", "Back radius R<sub>2</sub>", "length", -50e-3, allow_inf=True),
                 ParamSpec("t", "Center thickness t", "length", 5e-3),
             ),
         ),
         ElementTypeSpec(
             "CurvedInterface", "Curved interface",
             (
-                ParamSpec("n2", "Index after n2", "index", 1.5),
+                ParamSpec("n2", "Index after n<sub>2</sub>", "index", 1.5),
                 ParamSpec("R", "Radius R", "length", float("inf"), allow_inf=True),
             ),
         ),
         ElementTypeSpec(
             "FlatInterface", "Flat interface",
             (
-                ParamSpec("n2", "Index after n2", "index", 1.5),
+                ParamSpec("n2", "Index after n<sub>2</sub>", "index", 1.5),
             ),
         ),
     )

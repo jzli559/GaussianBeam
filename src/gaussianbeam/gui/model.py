@@ -43,6 +43,16 @@ from .elements import ELEMENT_TYPES, default_params
 LENGTH_UNITS = (("nm", 1e-9), ("um", 1e-6), ("mm", 1e-3), ("cm", 1e-2), ("m", 1.0))
 
 
+_SUB_DIGITS = {"0": "₀", "1": "₁", "2": "₂"}
+
+
+def subscript(name: str) -> str:
+    """Render a trailing digit as a Unicode subscript (n2 -> n₂, R1 -> R₁)."""
+    if name and name[-1] in _SUB_DIGITS:
+        return name[:-1] + _SUB_DIGITS[name[-1]]
+    return name
+
+
 def format_length(x: float) -> str:
     """Format an SI length with an automatic SI prefix."""
     if x is None:
@@ -117,9 +127,9 @@ class ElementSpec:
         for ps in ELEMENT_TYPES[self.type].params:
             v = self.params.get(ps.name, ps.default)
             if ps.kind == "length":
-                parts.append(f"{ps.name}={format_length(v)}")
+                parts.append(f"{subscript(ps.name)}={format_length(v)}")
             else:
-                parts.append(f"{ps.name}={v:.4g}")
+                parts.append(f"{subscript(ps.name)}={v:.4g}")
         return f"{label}: {', '.join(parts)}"
 
 
@@ -157,12 +167,12 @@ class Trace:
     wl: float
 
     def probe(self, z: float):
-        """Closed-form (w, R, n) at z, or None if z is outside all segments."""
+        """Closed-form (w, R, zR, n) at z, or None if outside all segments."""
         for seg in self.segments:
             if seg.z0 <= z <= seg.z1:
                 q = seg.q_in + (z - seg.z0) / seg.n
                 w, R = q_to_wR(q, self.wl, seg.n)
-                return float(w), float(R), float(seg.n)
+                return float(w), float(R), float(q.imag), float(seg.n)
         return None
 
 
@@ -173,12 +183,19 @@ class OpticalSystem:
     ``n0`` is the refractive index of the medium the initial beam lives in.
     The medium is a chain state (mirroring the core Beam): free space and
     thick lenses sit in the current medium, interfaces switch it to n2.
+
+    ``tail`` is a trailing free-space length appended for visualization:
+    after the last element users usually want to see how the beam evolves
+    a bit further.  ``None`` means auto = 50% of the total element length
+    (or 4 initial Rayleigh ranges when there are no elements).  The tail
+    only affects the trace, not the system-output beam properties.
     """
 
     wl: float = 632.8e-9
     w0: float = 0.3e-3
     elements: list = field(default_factory=list)
     n0: float = 1.0
+    tail: float | None = None
 
     @classmethod
     def default(cls) -> "OpticalSystem":
@@ -261,6 +278,21 @@ class OpticalSystem:
                 if spec.type in ("CurvedInterface", "FlatInterface"):
                     n_cur = p["n2"]
 
+        # Trailing free space for visualization (see class docstring).
+        tail = self.tail
+        if tail is None:
+            zR0 = np.pi * self.w0**2 * self.n0 / self.wl
+            tail = 0.5 * z if z > 0 else 4.0 * zR0
+        if tail > 0:
+            t = np.linspace(0.0, tail, n_samples)
+            qq = q + t / n_cur
+            w, R = q_to_wR(qq, self.wl, n_cur)
+            zs.append(z + t)
+            ws.append(w)
+            Rs.append(R)
+            segments.append(Segment(z, z + tail, q, n_cur))
+            z += tail
+
         beam = self.build_beam()
         final = {
             "w0": beam.w0,
@@ -292,6 +324,7 @@ class OpticalSystem:
         return {
             "version": 1,
             "beam": {"wl": self.wl, "w0": self.w0, "n": self.n0},
+            "tail": self.tail,
             "elements": [
                 {"type": s.type, "params": {k: enc(v) for k, v in s.params.items()}}
                 for s in self.elements
@@ -311,6 +344,8 @@ class OpticalSystem:
         system = cls(wl=float(beam.get("wl", 632.8e-9)),
                      w0=float(beam.get("w0", 0.3e-3)),
                      n0=float(beam.get("n", 1.0)))
+        tail = data.get("tail")
+        system.tail = float(tail) if tail is not None else None
         for e in data.get("elements", []):
             spec = ElementSpec.create(e["type"])
             for k, v in e.get("params", {}).items():

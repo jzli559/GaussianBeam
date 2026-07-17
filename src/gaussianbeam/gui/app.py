@@ -58,14 +58,16 @@ from .model import LENGTH_UNITS, ElementSpec, OpticalSystem, format_length
 
 
 class ParamRow(QWidget):
-    """Spin box + unit selector (+ optional infinity checkbox) for one parameter.
+    """Spin box + unit selector (+ optional infinity / auto checkbox).
 
     The value is exposed in SI units; the unit combo only changes the display.
+    With ``allow_auto`` an "auto" checkbox makes the value ``None`` (used by
+    the trailing free space: None = derive the length automatically).
     """
 
     changed = Signal()
 
-    def __init__(self, pspec: ParamSpec, value: float, parent=None):
+    def __init__(self, pspec: ParamSpec, value, parent=None):
         super().__init__(parent)
         self.pspec = pspec
         layout = QHBoxLayout(self)
@@ -95,6 +97,12 @@ class ParamRow(QWidget):
             self.inf.toggled.connect(self._on_inf)
             layout.addWidget(self.inf)
 
+        self.auto = None
+        if pspec.allow_auto:
+            self.auto = QCheckBox("auto")
+            self.auto.toggled.connect(self._on_auto)
+            layout.addWidget(self.auto)
+
         self.spin.valueChanged.connect(lambda _v: self.changed.emit())
         self.set_value(value)
 
@@ -103,11 +111,19 @@ class ParamRow(QWidget):
     def _on_unit(self, _idx):
         si = self.value()
         self.factor = self.combo.currentData()
+        if si is None or np.isinf(si):
+            return  # auto / infinity: no numeric display to convert
         self.spin.blockSignals(True)
         self.spin.setValue(si / self.factor)
         self.spin.blockSignals(False)
 
     def _on_inf(self, on):
+        self.spin.setEnabled(not on)
+        if self.combo is not None:
+            self.combo.setEnabled(not on)
+        self.changed.emit()
+
+    def _on_auto(self, on):
         self.spin.setEnabled(not on)
         if self.combo is not None:
             self.combo.setEnabled(not on)
@@ -122,14 +138,33 @@ class ParamRow(QWidget):
 
     # -- public API --
 
-    def value(self) -> float:
-        """Current value in SI units."""
+    def value(self):
+        """Current value in SI units, or None when "auto" is checked."""
+        if self.auto is not None and self.auto.isChecked():
+            return None
         if self.inf is not None and self.inf.isChecked():
             return np.inf
         return self.spin.value() * self.factor
 
-    def set_value(self, v: float):
+    def set_value(self, v):
         self.spin.blockSignals(True)
+        if self.auto is not None:
+            self.auto.blockSignals(True)
+            self.auto.setChecked(v is None)
+            self.auto.blockSignals(False)
+            self.spin.setEnabled(v is not None)
+            if self.combo is not None:
+                self.combo.setEnabled(v is not None)
+        if v is None:
+            # placeholder shown when the user unchecks "auto"
+            self.spin.setValue(50.0)
+            if self.combo is not None:
+                self.combo.blockSignals(True)
+                self.combo.setCurrentIndex(2)  # mm
+                self.combo.blockSignals(False)
+                self.factor = LENGTH_UNITS[2][1]
+            self.spin.blockSignals(False)
+            return
         if self.inf is not None:
             self.inf.blockSignals(True)
             self.inf.setChecked(bool(np.isinf(v)))
@@ -220,14 +255,14 @@ class MainWindow(QMainWindow):
     def _build_beam_group(self):
         box = QGroupBox("Initial beam (waist at z = 0)")
         form = QFormLayout(box)
-        self.row_wl = ParamRow(ParamSpec("wl", "Wavelength wl", "length", 0.0), self.system.wl)
+        self.row_wl = ParamRow(ParamSpec("wl", "Wavelength λ", "length", 0.0), self.system.wl)
         self.row_w0 = ParamRow(ParamSpec("w0", "Waist radius w0", "length", 0.0), self.system.w0)
         self.row_n = ParamRow(ParamSpec("n", "Medium index n", "index", 0.0), self.system.n0)
         self.row_wl.changed.connect(self._on_beam_param)
         self.row_w0.changed.connect(self._on_beam_param)
         self.row_n.changed.connect(self._on_beam_param)
-        form.addRow("Wavelength wl", self.row_wl)
-        form.addRow("Waist radius w0", self.row_w0)
+        form.addRow("Wavelength λ", self.row_wl)
+        form.addRow("Waist radius w<sub>0</sub>", self.row_w0)
         form.addRow("Medium index n", self.row_n)
         return box
 
@@ -258,10 +293,22 @@ class MainWindow(QMainWindow):
         btn_up.clicked.connect(lambda: self._move_element(-1))
         btn_down = QPushButton("Down")
         btn_down.clicked.connect(lambda: self._move_element(+1))
+        btn_clear = QPushButton("Clear")
+        btn_clear.clicked.connect(self._clear_elements)
         row2.addWidget(btn_del)
         row2.addWidget(btn_up)
         row2.addWidget(btn_down)
+        row2.addWidget(btn_clear)
         layout.addLayout(row2)
+
+        tail_form = QFormLayout()
+        self.row_tail = ParamRow(
+            ParamSpec("tail", "Trailing free space", "length", None, allow_auto=True),
+            self.system.tail,
+        )
+        self.row_tail.changed.connect(self._on_beam_param)
+        tail_form.addRow("Trailing free space", self.row_tail)
+        layout.addLayout(tail_form)
         return box
 
     def _build_param_group(self):
@@ -277,8 +324,9 @@ class MainWindow(QMainWindow):
         self.lbl_z = QLabel("z = —")
         self.lbl_w = QLabel("w(z) = —")
         self.lbl_R = QLabel("R(z) = —")
+        self.lbl_zR = QLabel("z<sub>R</sub> = —")
         self.lbl_n = QLabel("n = —")
-        for lbl in (self.lbl_z, self.lbl_w, self.lbl_R, self.lbl_n):
+        for lbl in (self.lbl_z, self.lbl_w, self.lbl_R, self.lbl_zR, self.lbl_n):
             layout.addWidget(lbl)
         return box
 
@@ -326,6 +374,10 @@ class MainWindow(QMainWindow):
         del self.system.elements[row]
         self.refresh_all(select=min(row, len(self.system.elements) - 1))
 
+    def _clear_elements(self):
+        self.system.elements.clear()
+        self.refresh_all(select=-1)
+
     def _move_element(self, delta: int):
         row = self.list.currentRow()
         new = row + delta
@@ -343,6 +395,7 @@ class MainWindow(QMainWindow):
         self.system.wl = self.row_wl.value()
         self.system.w0 = self.row_w0.value()
         self.system.n0 = self.row_n.value()
+        self.system.tail = self.row_tail.value()
         self.refresh_plot()
         self.refresh_results()
 
@@ -448,28 +501,16 @@ class MainWindow(QMainWindow):
                                     pen=pg.mkPen(color, style=Qt.DashLine, width=1)),
                     ignoreBounds=True,
                 )
-                if mk.kind == "lens":
-                    y = 0.55 * ymax
-                    self.plot.addItem(
-                        pg.ScatterPlotItem([mk.z0], [y], symbol="t1", size=18,
-                                           brush=pg.mkBrush(_LENS_COLOR)),
-                        ignoreBounds=True,
-                    )
-                    self.plot.addItem(
-                        pg.ScatterPlotItem([mk.z0], [-y], symbol="t", size=18,
-                                           brush=pg.mkBrush(_LENS_COLOR)),
-                        ignoreBounds=True,
-                    )
                 z_text = mk.z0
-            text = pg.TextItem(mk.label, color=(210, 210, 210), anchor=(0.5, 1))
+            text = pg.TextItem(html=mk.label, color=(210, 210, 210), anchor=(0.5, 1))
             self.plot.addItem(text, ignoreBounds=True)
             text.setPos(z_text, y_text)
 
     def refresh_results(self):
         f = self.trace.final
-        self.res_w0.setText(f"Output waist w0' = {format_length(f['w0'])}")
+        self.res_w0.setText(f"Output waist w<sub>0</sub>′ = {format_length(f['w0'])}")
         self.res_loc.setText(f"Waist position (rel. last element) = {format_length(f['w0_loc'])}")
-        self.res_zR.setText(f"Rayleigh range zR = {format_length(f['zR'])}")
+        self.res_zR.setText(f"Rayleigh range z<sub>R</sub> = {format_length(f['zR'])}")
         self.res_div.setText(f"Divergence half-angle θ = {f['theta'] / mrad:.4g} mrad")
 
     # ------------------------------------------------------------------
@@ -489,7 +530,7 @@ class MainWindow(QMainWindow):
         if res is None:
             self._clear_probe()
             return
-        w, R, n = res
+        w, R, zR, n = res
         self.probe_line.setVisible(True)
         self.probe_line.setPos(z)
         self.probe_pts.setData([z, z], [w, -w])
@@ -501,6 +542,7 @@ class MainWindow(QMainWindow):
             direction = "diverging" if R > 0 else "converging"
             r_text = f"{format_length(R)} ({direction})"
         self.lbl_R.setText(f"R(z) = {r_text}")
+        self.lbl_zR.setText(f"z<sub>R</sub> = {format_length(zR)}")
         self.lbl_n.setText(f"n = {n:.4g}")
 
     def _clear_probe(self):
@@ -511,6 +553,7 @@ class MainWindow(QMainWindow):
         self.lbl_z.setText("z = —")
         self.lbl_w.setText("w(z) = —")
         self.lbl_R.setText("R(z) = —")
+        self.lbl_zR.setText("z<sub>R</sub> = —")
         self.lbl_n.setText("n = —")
 
     # ------------------------------------------------------------------
@@ -542,6 +585,7 @@ class MainWindow(QMainWindow):
         self.row_wl.set_value(self.system.wl)
         self.row_w0.set_value(self.system.w0)
         self.row_n.set_value(self.system.n0)
+        self.row_tail.set_value(self.system.tail)
         self.refresh_all(select=0)
 
 
