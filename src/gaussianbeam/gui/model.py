@@ -151,6 +151,7 @@ class Marker:
     z1: float        # == z0 for thin elements, z0 + t for ThickLens
     label: str
     kind: str        # "lens" | "interface" | "thick"
+    spec: object = None  # the ElementSpec this marker belongs to
 
 
 @dataclass
@@ -268,12 +269,12 @@ class OpticalSystem:
                 q = q + d / n
             elif spec.type == "ThickLens":
                 t = p["t"]
-                markers.append(Marker(z, z + t, spec.summary(), "thick"))
+                markers.append(Marker(z, z + t, spec.summary(), "thick", spec))
                 q = _mobius(element_matrix(spec, p), q)
                 z += t
             else:
                 kind = "lens" if spec.type == "ThinLens" else "interface"
-                markers.append(Marker(z, z, spec.summary(), kind))
+                markers.append(Marker(z, z, spec.summary(), kind, spec))
                 q = _mobius(element_matrix(spec, p), q)
                 if spec.type in ("CurvedInterface", "FlatInterface"):
                     n_cur = p["n2"]

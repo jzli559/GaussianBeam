@@ -24,8 +24,9 @@ from functools import partial
 os.environ.setdefault("PYQTGRAPH_QT_LIB", "PySide6")
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QAbstractSpinBox,
     QApplication,
     QCheckBox,
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -235,12 +237,25 @@ class MainWindow(QMainWindow):
         splitter.addWidget(scroll)
 
         # ---- right plot ----
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         self.plot = pg.PlotWidget()
         self.plot.setLabel("bottom", "z", units="m")
         self.plot.setLabel("left", "w", units="m")
         self.plot.showGrid(x=True, y=True, alpha=0.25)
-        splitter.addWidget(self.plot)
+        right_layout.addWidget(self.plot, 1)
+        hint = QLabel(
+            "Tip: drag in the list to reorder · "
+            "Ctrl+drag an element on the plot to slide it along z"
+        )
+        hint.setStyleSheet("color: gray; padding: 2px 6px;")
+        right_layout.addWidget(hint)
+        splitter.addWidget(right)
         splitter.setStretchFactor(1, 1)
+
+        self._drag_spec = None
+        self.plot.viewport().installEventFilter(self)
 
         self._mouse_proxy = pg.SignalProxy(
             self.plot.scene().sigMouseMoved, rateLimit=60, slot=self._on_mouse_moved
@@ -271,6 +286,9 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(box)
         self.list = QListWidget()
         self.list.currentRowChanged.connect(self._on_selection)
+        self.list.setDragDropMode(QAbstractItemView.InternalMove)
+        self.list.setDefaultDropAction(Qt.MoveAction)
+        self.list.model().rowsMoved.connect(self._on_rows_moved)
         layout.addWidget(self.list, 1)
 
         row1 = QHBoxLayout()
@@ -279,11 +297,8 @@ class MainWindow(QMainWindow):
             self.combo_type.addItem(spec.label, type_name)
         row1.addWidget(self.combo_type, 1)
         btn_add = QPushButton("Add")
-        btn_add.clicked.connect(lambda: self._add_element(insert=False))
-        btn_ins = QPushButton("Insert before")
-        btn_ins.clicked.connect(lambda: self._add_element(insert=True))
+        btn_add.clicked.connect(self._add_element)
         row1.addWidget(btn_add)
-        row1.addWidget(btn_ins)
         layout.addLayout(row1)
 
         row2 = QHBoxLayout()
@@ -356,16 +371,20 @@ class MainWindow(QMainWindow):
     # Element list operations
     # ------------------------------------------------------------------
 
-    def _add_element(self, insert: bool):
+    def _add_element(self):
         spec = ElementSpec.create(self.combo_type.currentData())
-        row = self.list.currentRow()
-        if insert and row >= 0:
-            self.system.elements.insert(row, spec)
-            sel = row
-        else:
-            self.system.elements.append(spec)
-            sel = len(self.system.elements) - 1
-        self.refresh_all(select=sel)
+        self.system.elements.append(spec)
+        self.refresh_all(select=len(self.system.elements) - 1)
+
+    def _on_rows_moved(self, *_args):
+        """List drag-and-drop finished: sync the model order and renumber."""
+        self.system.elements = [
+            self.list.item(i).data(Qt.UserRole) for i in range(self.list.count())
+        ]
+        for i, spec in enumerate(self.system.elements):
+            self.list.item(i).setText(f"{i + 1}. {spec.summary()}")
+        self.refresh_plot()
+        self.refresh_results()
 
     def _remove_element(self):
         row = self.list.currentRow()
@@ -439,7 +458,9 @@ class MainWindow(QMainWindow):
         self.list.blockSignals(True)
         self.list.clear()
         for i, spec in enumerate(self.system.elements):
-            self.list.addItem(f"{i + 1}. {spec.summary()}")
+            item = QListWidgetItem(f"{i + 1}. {spec.summary()}")
+            item.setData(Qt.UserRole, spec)
+            self.list.addItem(item)
         self.list.blockSignals(False)
         if select is not None and 0 <= select < self.list.count():
             self.list.setCurrentRow(select)
@@ -512,6 +533,104 @@ class MainWindow(QMainWindow):
         self.res_loc.setText(f"Waist position (rel. last element) = {format_length(f['w0_loc'])}")
         self.res_zR.setText(f"Rayleigh range z<sub>R</sub> = {format_length(f['zR'])}")
         self.res_div.setText(f"Divergence half-angle θ = {f['theta'] / mrad:.4g} mrad")
+
+    # ------------------------------------------------------------------
+    # Ctrl+drag element sliding on the plot
+    # ------------------------------------------------------------------
+
+    def eventFilter(self, obj, event):
+        if obj is self.plot.viewport():
+            et = event.type()
+            if et == QEvent.MouseButtonPress:
+                if (
+                    event.button() == Qt.LeftButton
+                    and event.modifiers() & Qt.ControlModifier
+                    and self.trace is not None
+                ):
+                    spec = self._marker_at(event.position())
+                    if spec is not None:
+                        self._drag_spec = spec
+                        self.plot.viewport().setCursor(Qt.SizeHorCursor)
+                        return True  # consume: no ViewBox pan
+            elif et == QEvent.MouseMove and self._drag_spec is not None:
+                z = self._view_z(event.position())
+                self._slide_element_to(self._drag_spec, z)
+                self.refresh_plot()
+                return True
+            elif et == QEvent.MouseButtonRelease and self._drag_spec is not None:
+                spec = self._drag_spec
+                self._drag_spec = None
+                self.plot.viewport().unsetCursor()
+                row = (
+                    self.system.elements.index(spec)
+                    if spec in self.system.elements
+                    else -1
+                )
+                self.refresh_all(select=row)
+                return True
+        return super().eventFilter(obj, event)
+
+    def _view_z(self, pos):
+        vb = self.plot.getViewBox()
+        # toPoint(): PySide6's mapToScene(QPointF) overload is buggy
+        return vb.mapSceneToView(self.plot.mapToScene(pos.toPoint())).x()
+
+    def _marker_at(self, pos):
+        """Non-FreeSpace element whose marker is within ~12 px of pos."""
+        vb = self.plot.getViewBox()
+        px_size = vb.viewPixelSize()[0]
+        if px_size <= 0:
+            return None
+        z = self._view_z(pos)
+        best, best_px = None, 12.0
+        for mk in self.trace.markers:
+            if mk.spec is None:
+                continue
+            zc = mk.z0 if mk.kind != "thick" else (mk.z0 + mk.z1) / 2
+            dx = abs(z - zc) / px_size
+            if dx < best_px:
+                best, best_px = mk.spec, dx
+        return best
+
+    def _slide_element_to(self, spec, z_new):
+        """Slide a non-FreeSpace element to z_new.
+
+        Other elements keep their z positions; the free-space gaps around
+        the dragged element merge and re-split, so crossing a neighbor
+        naturally reorders the element list.
+        """
+        t_drag = spec.params.get("t", 0.0) if spec.type == "ThickLens" else 0.0
+        others = []   # (spec, z0) of non-FreeSpace elements except the dragged one
+        z_total = 0.0  # full path length (dragged element's own span excluded)
+        for e in self.system.elements:
+            if e is spec:
+                continue
+            if e.type == "FreeSpace":
+                z_total += e.params["d"]
+            elif e.type == "ThickLens":
+                others.append((e, z_total))
+                z_total += e.params["t"]
+            else:
+                others.append((e, z_total))
+        z_new = max(z_new, 0.0)
+        pos = sum(1 for _, z0 in others if z0 <= z_new)
+        ordered = [e for e, _ in others]
+        ordered.insert(pos, spec)
+        positions = {id(e): z0 for e, z0 in others}
+        positions[id(spec)] = z_new
+
+        new_list, z = [], 0.0
+        for e in ordered:
+            gap = positions[id(e)] - z
+            if gap > 0:
+                new_list.append(ElementSpec("FreeSpace", {"d": gap}))
+            new_list.append(e)
+            z = positions[id(e)] + (
+                e.params.get("t", 0.0) if e.type == "ThickLens" else 0.0
+            )
+        if z_total - z > 0:
+            new_list.append(ElementSpec("FreeSpace", {"d": z_total - z}))
+        self.system.elements = new_list
 
     # ------------------------------------------------------------------
     # Hover probe
