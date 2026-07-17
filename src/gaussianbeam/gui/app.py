@@ -171,6 +171,7 @@ _AXIS_PEN = pg.mkPen((150, 150, 150), style=Qt.DashLine)
 _LENS_COLOR = (120, 230, 140)
 _INTERFACE_COLOR = (255, 180, 90)
 _PROBE_PEN = pg.mkPen((255, 220, 90), style=Qt.DashLine)
+_SOURCE_PEN = pg.mkPen((230, 230, 230), style=Qt.DotLine, width=1)
 
 
 class MainWindow(QMainWindow):
@@ -488,6 +489,17 @@ class MainWindow(QMainWindow):
         ymax = float(np.nanmax(t.w)) if t.w.size else 1.0
         if not np.isfinite(ymax) or ymax <= 0:
             ymax = 1.0
+        # beam source (initial waist) at z = 0
+        self.plot.addItem(
+            pg.InfiniteLine(pos=0.0, angle=90, pen=_SOURCE_PEN),
+            ignoreBounds=True,
+        )
+        src = pg.TextItem(
+            text=f"Source: w₀={format_length(self.system.w0)}",
+            color=(230, 230, 230), anchor=(0, 1),
+        )
+        self.plot.addItem(src, ignoreBounds=True)
+        src.setPos(0.0, 1.66 * ymax)
         for i, mk in enumerate(t.markers):
             y_text = ymax * (1.10 + 0.24 * (i % 3))
             if mk.kind == "thick":
@@ -505,7 +517,15 @@ class MainWindow(QMainWindow):
                     ignoreBounds=True,
                 )
                 z_text = mk.z0
-            text = pg.TextItem(html=mk.label, color=(210, 210, 210), anchor=(0.5, 1))
+            # anchor labels away from the view edges they would clip against
+            L = t.total_length
+            if z_text < 0.12 * L:
+                anchor = (0, 1)
+            elif z_text > 0.88 * L:
+                anchor = (1, 1)
+            else:
+                anchor = (0.5, 1)
+            text = pg.TextItem(text=mk.label, color=(210, 210, 210), anchor=anchor)
             self.plot.addItem(text, ignoreBounds=True)
             text.setPos(z_text, y_text)
 
