@@ -187,8 +187,8 @@ class OpticalSystem:
 
     ``tail`` is a trailing free-space length appended for visualization:
     after the last element users usually want to see how the beam evolves
-    a bit further.  ``None`` means auto = 50% of the total element length
-    (or 4 initial Rayleigh ranges when there are no elements).  The tail
+    a bit further.  It is initialized (and re-set by the GUI's "auto"
+    button) to :meth:`auto_tail`, but stays fixed afterwards.  The tail
     only affects the trace, not the system-output beam properties.
     """
 
@@ -197,6 +197,23 @@ class OpticalSystem:
     elements: list = field(default_factory=list)
     n0: float = 1.0
     tail: float | None = None
+
+    def __post_init__(self):
+        if self.tail is None:
+            self.tail = self.auto_tail()
+
+    def auto_tail(self) -> float:
+        """Suggested trailing length: 50% of the total element length,
+        or 4 initial Rayleigh ranges when there are no elements."""
+        L = 0.0
+        for e in self.elements:
+            if e.type == "FreeSpace":
+                L += e.params.get("d", 0.0)
+            elif e.type == "ThickLens":
+                L += e.params.get("t", 0.0)
+        if L > 0:
+            return 0.5 * L
+        return 4.0 * np.pi * self.w0**2 * self.n0 / self.wl
 
     @classmethod
     def default(cls) -> "OpticalSystem":
@@ -280,10 +297,7 @@ class OpticalSystem:
                     n_cur = p["n2"]
 
         # Trailing free space for visualization (see class docstring).
-        tail = self.tail
-        if tail is None:
-            zR0 = np.pi * self.w0**2 * self.n0 / self.wl
-            tail = 0.5 * z if z > 0 else 4.0 * zR0
+        tail = self.tail if self.tail is not None else self.auto_tail()
         if tail > 0:
             t = np.linspace(0.0, tail, n_samples)
             qq = q + t / n_cur
@@ -345,14 +359,18 @@ class OpticalSystem:
         system = cls(wl=float(beam.get("wl", 632.8e-9)),
                      w0=float(beam.get("w0", 0.3e-3)),
                      n0=float(beam.get("n", 1.0)))
-        tail = data.get("tail")
-        system.tail = float(tail) if tail is not None else None
         for e in data.get("elements", []):
             spec = ElementSpec.create(e["type"])
             for k, v in e.get("params", {}).items():
                 if k in spec.params:
                     spec.params[k] = dec(v)
             system.elements.append(spec)
+        tail = data.get("tail")
+        if tail is not None:
+            system.tail = float(tail)
+        else:
+            # configs without a tail (or null): suggest once from the elements
+            system.tail = system.auto_tail()
         return system
 
     def save(self, path: str):

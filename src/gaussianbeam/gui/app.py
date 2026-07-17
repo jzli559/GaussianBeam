@@ -60,16 +60,14 @@ from .model import LENGTH_UNITS, ElementSpec, OpticalSystem, format_length
 
 
 class ParamRow(QWidget):
-    """Spin box + unit selector (+ optional infinity / auto checkbox).
+    """Spin box + unit selector (+ optional infinity checkbox) for one parameter.
 
     The value is exposed in SI units; the unit combo only changes the display.
-    With ``allow_auto`` an "auto" checkbox makes the value ``None`` (used by
-    the trailing free space: None = derive the length automatically).
     """
 
     changed = Signal()
 
-    def __init__(self, pspec: ParamSpec, value, parent=None):
+    def __init__(self, pspec: ParamSpec, value: float, parent=None):
         super().__init__(parent)
         self.pspec = pspec
         layout = QHBoxLayout(self)
@@ -99,12 +97,6 @@ class ParamRow(QWidget):
             self.inf.toggled.connect(self._on_inf)
             layout.addWidget(self.inf)
 
-        self.auto = None
-        if pspec.allow_auto:
-            self.auto = QCheckBox("auto")
-            self.auto.toggled.connect(self._on_auto)
-            layout.addWidget(self.auto)
-
         self.spin.valueChanged.connect(lambda _v: self.changed.emit())
         self.set_value(value)
 
@@ -113,19 +105,13 @@ class ParamRow(QWidget):
     def _on_unit(self, _idx):
         si = self.value()
         self.factor = self.combo.currentData()
-        if si is None or np.isinf(si):
-            return  # auto / infinity: no numeric display to convert
+        if np.isinf(si):
+            return  # infinity: no numeric display to convert
         self.spin.blockSignals(True)
         self.spin.setValue(si / self.factor)
         self.spin.blockSignals(False)
 
     def _on_inf(self, on):
-        self.spin.setEnabled(not on)
-        if self.combo is not None:
-            self.combo.setEnabled(not on)
-        self.changed.emit()
-
-    def _on_auto(self, on):
         self.spin.setEnabled(not on)
         if self.combo is not None:
             self.combo.setEnabled(not on)
@@ -140,33 +126,14 @@ class ParamRow(QWidget):
 
     # -- public API --
 
-    def value(self):
-        """Current value in SI units, or None when "auto" is checked."""
-        if self.auto is not None and self.auto.isChecked():
-            return None
+    def value(self) -> float:
+        """Current value in SI units."""
         if self.inf is not None and self.inf.isChecked():
             return np.inf
         return self.spin.value() * self.factor
 
-    def set_value(self, v):
+    def set_value(self, v: float):
         self.spin.blockSignals(True)
-        if self.auto is not None:
-            self.auto.blockSignals(True)
-            self.auto.setChecked(v is None)
-            self.auto.blockSignals(False)
-            self.spin.setEnabled(v is not None)
-            if self.combo is not None:
-                self.combo.setEnabled(v is not None)
-        if v is None:
-            # placeholder shown when the user unchecks "auto"
-            self.spin.setValue(50.0)
-            if self.combo is not None:
-                self.combo.blockSignals(True)
-                self.combo.setCurrentIndex(2)  # mm
-                self.combo.blockSignals(False)
-                self.factor = LENGTH_UNITS[2][1]
-            self.spin.blockSignals(False)
-            return
         if self.inf is not None:
             self.inf.blockSignals(True)
             self.inf.setChecked(bool(np.isinf(v)))
@@ -316,15 +283,30 @@ class MainWindow(QMainWindow):
         row2.addWidget(btn_clear)
         layout.addLayout(row2)
 
-        tail_form = QFormLayout()
+        tail_row = QWidget()
+        tail_layout = QHBoxLayout(tail_row)
+        tail_layout.setContentsMargins(0, 0, 0, 0)
         self.row_tail = ParamRow(
-            ParamSpec("tail", "Trailing free space", "length", None, allow_auto=True),
+            ParamSpec("tail", "Trailing free space", "length", 50e-3),
             self.system.tail,
         )
         self.row_tail.changed.connect(self._on_beam_param)
-        tail_form.addRow("Trailing free space", self.row_tail)
+        tail_layout.addWidget(self.row_tail, 1)
+        btn_auto_tail = QPushButton("auto")
+        btn_auto_tail.setToolTip(
+            "Set the trailing length to 50% of the total element length"
+        )
+        btn_auto_tail.clicked.connect(self._auto_tail)
+        tail_layout.addWidget(btn_auto_tail)
+        tail_form = QFormLayout()
+        tail_form.addRow("Trailing free space", tail_row)
         layout.addLayout(tail_form)
         return box
+
+    def _auto_tail(self):
+        """One-shot: set the trailing free space to the suggested length."""
+        self.row_tail.set_value(self.system.auto_tail())
+        self._on_beam_param()
 
     def _build_param_group(self):
         self.param_box = QGroupBox("Element parameters")
@@ -612,7 +594,7 @@ class MainWindow(QMainWindow):
                 z_total += e.params["t"]
             else:
                 others.append((e, z_total))
-        z_new = max(z_new, 0.0)
+        z_new = min(max(z_new, 0.0), max(z_total - t_drag, 0.0))
         pos = sum(1 for _, z0 in others if z0 <= z_new)
         ordered = [e for e, _ in others]
         ordered.insert(pos, spec)

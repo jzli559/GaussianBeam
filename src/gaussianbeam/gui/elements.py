@@ -20,9 +20,7 @@ class ParamSpec:
     label: str       # label shown in the parameter form (Qt rich text allowed)
     kind: str        # "length" | "index"
     default: float
-    allow_inf: bool = False   # whether the form offers an "infinity" checkbox
-    allow_auto: bool = False  # whether the form offers an "auto" checkbox
-                              # (value None, used by the trailing free space)
+    allow_inf: bool = False  # whether the form offers an "infinity" checkbox
 
 
 @dataclass(frozen=True)
