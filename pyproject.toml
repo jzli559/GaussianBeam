@@ -33,11 +33,16 @@ requires-python = ">=3.8"
 dependencies = [
     "numpy>=1.20",
     "sympy>=1.10",
+    "PySide6>=6.5",
+    "pyqtgraph>=0.13",
 ]
 
 [project.optional-dependencies]
 dev = []
 doc = []
+
+[project.scripts]
+gaussianbeam-gui = "gaussianbeam.gui:main"
 
 [project.urls]
 Homepage = "https://github.com/jzli559/GaussianBeam"
