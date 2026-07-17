@@ -543,6 +543,7 @@ class MainWindow(QMainWindow):
                 spec = self._drag_spec
                 self._drag_spec = None
                 self.plot.viewport().unsetCursor()
+                self.row_tail.set_value(self.system.tail)
                 row = (
                     self.system.elements.index(spec)
                     if spec in self.system.elements
@@ -579,11 +580,13 @@ class MainWindow(QMainWindow):
 
         Other elements keep their z positions; the free-space gaps around
         the dragged element merge and re-split, so crossing a neighbor
-        naturally reorders the element list.
+        naturally reorders the element list.  The draggable range extends
+        over the trailing free space: sliding into it shortens the tail
+        (the "auto" button restores the suggested length).
         """
         t_drag = spec.params.get("t", 0.0) if spec.type == "ThickLens" else 0.0
         others = []   # (spec, z0) of non-FreeSpace elements except the dragged one
-        z_total = 0.0  # full path length (dragged element's own span excluded)
+        z_total = 0.0  # element path length (dragged element's own span excluded)
         for e in self.system.elements:
             if e is spec:
                 continue
@@ -594,7 +597,9 @@ class MainWindow(QMainWindow):
                 z_total += e.params["t"]
             else:
                 others.append((e, z_total))
-        z_new = min(max(z_new, 0.0), max(z_total - t_drag, 0.0))
+        tail = self.system.tail if self.system.tail is not None else 0.0
+        z_max = z_total + tail - t_drag
+        z_new = min(max(z_new, 0.0), max(z_max, 0.0))
         pos = sum(1 for _, z0 in others if z0 <= z_new)
         ordered = [e for e, _ in others]
         ordered.insert(pos, spec)
@@ -610,8 +615,9 @@ class MainWindow(QMainWindow):
             z = positions[id(e)] + (
                 e.params.get("t", 0.0) if e.type == "ThickLens" else 0.0
             )
-        if z_total - z > 0:
-            new_list.append(ElementSpec("FreeSpace", {"d": z_total - z}))
+        # Everything beyond the last element is the trailing free space:
+        # sliding into it shortens it, sliding back out restores it.
+        self.system.tail = max(z_total + tail - z, 0.0)
         self.system.elements = new_list
 
     # ------------------------------------------------------------------
