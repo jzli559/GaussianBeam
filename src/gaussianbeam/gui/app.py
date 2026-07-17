@@ -238,15 +238,16 @@ class MainWindow(QMainWindow):
     def _build_beam_group(self):
         box = QGroupBox("Initial beam (waist at z = 0)")
         form = QFormLayout(box)
-        self.row_wl = ParamRow(ParamSpec("wl", "Wavelength λ", "length", 0.0), self.system.wl)
-        self.row_w0 = ParamRow(ParamSpec("w0", "Waist radius w0", "length", 0.0), self.system.w0)
-        self.row_n = ParamRow(ParamSpec("n", "Medium index n", "index", 0.0), self.system.n0)
-        self.row_wl.changed.connect(self._on_beam_param)
-        self.row_w0.changed.connect(self._on_beam_param)
-        self.row_n.changed.connect(self._on_beam_param)
-        form.addRow("Wavelength λ", self.row_wl)
-        form.addRow("Waist radius w<sub>0</sub>", self.row_w0)
-        form.addRow("Medium index n", self.row_n)
+        rows = [
+            (ParamSpec("wl", "Wavelength λ", "length", 0.0), "wl", "row_wl"),
+            (ParamSpec("w0", "Waist radius w<sub>0</sub>", "length", 0.0), "w0", "row_w0"),
+            (ParamSpec("n", "Medium index n", "index", 0.0), "n0", "row_n"),
+        ]
+        for pspec, sys_attr, row_attr in rows:
+            row = ParamRow(pspec, getattr(self.system, sys_attr))
+            row.changed.connect(self._on_beam_param)
+            form.addRow(pspec.label, row)
+            setattr(self, row_attr, row)
         return box
 
     def _build_element_group(self):
@@ -470,9 +471,9 @@ class MainWindow(QMainWindow):
             lower = self.plot.plot(t.z, -t.w, pen=_ENVELOPE_PEN)
             self.plot.addItem(pg.FillBetweenItem(upper, lower, brush=_ENVELOPE_BRUSH))
             self.plot.addItem(pg.InfiniteLine(pos=0, angle=0, pen=_AXIS_PEN))
-            self._draw_markers(t)
             ymax = float(np.nanmax(t.w))
             ymax = ymax if np.isfinite(ymax) and ymax > 0 else 1.0
+            self._draw_markers(t, ymax)
             L = t.total_length
             self.plot.setXRange(-0.04 * L, 1.04 * L, padding=0)
             self.plot.setYRange(-1.35 * ymax, 1.75 * ymax, padding=0)
@@ -485,10 +486,7 @@ class MainWindow(QMainWindow):
         )
         self.plot.addItem(self.probe_pts, ignoreBounds=True)
 
-    def _draw_markers(self, t):
-        ymax = float(np.nanmax(t.w)) if t.w.size else 1.0
-        if not np.isfinite(ymax) or ymax <= 0:
-            ymax = 1.0
+    def _draw_markers(self, t, ymax):
         # beam source (initial waist) at z = 0
         self.plot.addItem(
             pg.InfiniteLine(pos=0.0, angle=90, pen=_SOURCE_PEN),
@@ -500,6 +498,7 @@ class MainWindow(QMainWindow):
         )
         self.plot.addItem(src, ignoreBounds=True)
         src.setPos(0.0, 1.66 * ymax)
+        L = t.total_length
         for i, mk in enumerate(t.markers):
             y_text = ymax * (1.10 + 0.24 * (i % 3))
             if mk.kind == "thick":
@@ -518,7 +517,6 @@ class MainWindow(QMainWindow):
                 )
                 z_text = mk.z0
             # anchor labels away from the view edges they would clip against
-            L = t.total_length
             if z_text < 0.12 * L:
                 anchor = (0, 1)
             elif z_text > 0.88 * L:

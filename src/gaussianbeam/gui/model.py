@@ -15,7 +15,8 @@ Computation strategy (numeric mode only):
   ``q(z) = q_in + (z - z0) / n``, so a whole segment is sampled with one
   vectorized NumPy expression.
 * Beam radius and wavefront curvature follow from
-  ``w^2 = -wl / (pi * Im(1/q))`` and ``R = 1 / Re(1/q)``
+  ``w^2 = -wl0 / (pi * n * Im(1/q))`` and ``R = 1 / Re(1/q)``, with
+  ``wl0`` the vacuum wavelength and ``n`` the local medium
   (``R = inf`` means a plane wavefront; ``R > 0`` means the center of
   curvature is after the plane, i.e. a diverging beam).
 
@@ -362,7 +363,7 @@ class OpticalSystem:
         for e in data.get("elements", []):
             spec = ElementSpec.create(e["type"])
             for k, v in e.get("params", {}).items():
-                if k in spec.params:
+                if k in spec.params and v is not None:
                     spec.params[k] = dec(v)
             system.elements.append(spec)
         tail = data.get("tail")

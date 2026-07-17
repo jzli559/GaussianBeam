@@ -213,8 +213,6 @@ class Beam:
         :type wl: float | sympy.Symbol
         :param w0: waist radius (m)
         :type w0: float | sympy.Symbol
-        :param theta: divergence angle (rad)
-        :type theta: float | sympy.Symbol
         :param mode: numeric or symbolic
         :type mode: Mode
         :param n: refractive index of the medium the initial beam lives in
