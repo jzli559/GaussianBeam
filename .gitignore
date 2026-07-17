@@ -19,3 +19,7 @@ venv/
 
 # Data files
 data/
+
+# AI agent files: instructions are tracked, everything else is ignored
+/agent/*
+!/agent/instructions/
