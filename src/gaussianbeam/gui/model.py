@@ -64,15 +64,17 @@ def _mobius(M: np.ndarray, q: complex) -> complex:
     return (A * q + B) / (C * q + D)
 
 
-def q_to_wR(q, wl: float):
+def q_to_wR(q, wl0: float, n):
     """Beam radius ``w`` and wavefront curvature radius ``R`` from q.
 
-    Works on scalars or NumPy arrays.  See module docstring for formulas.
+    ``wl0`` is the vacuum wavelength and ``n`` the local medium index:
+    ``w^2 = -wl0 / (pi * n * Im(1/q))``, ``R = 1 / Re(1/q)``.
+    Works on scalars or NumPy arrays.
     """
     q = np.asarray(q, dtype=complex)
     with np.errstate(divide="ignore", invalid="ignore"):
         inv = 1.0 / q
-        w = np.sqrt(np.clip(-wl / (np.pi * inv.imag), 0.0, None))
+        w = np.sqrt(np.clip(-wl0 / (np.pi * n * inv.imag), 0.0, None))
         R = np.where(inv.real == 0.0, np.inf, 1.0 / inv.real)
     return w, R
 
@@ -159,7 +161,7 @@ class Trace:
         for seg in self.segments:
             if seg.z0 <= z <= seg.z1:
                 q = seg.q_in + (z - seg.z0) / seg.n
-                w, R = q_to_wR(q, self.wl)
+                w, R = q_to_wR(q, self.wl, seg.n)
                 return float(w), float(R), float(seg.n)
         return None
 
@@ -213,7 +215,7 @@ class OpticalSystem:
 
         :param n_samples: sample points per FreeSpace segment
         """
-        q = 1j * np.pi * self.w0**2 / self.wl  # waist at z = 0
+        q = 1j * np.pi * self.w0**2 * self.n0 / self.wl  # waist at z = 0
         z = 0.0
         n_cur = self.n0  # current medium (mirrors the core chain state)
         zs, ws, Rs = [], [], []
@@ -236,7 +238,7 @@ class OpticalSystem:
                 d, n = p["d"], n_cur
                 t = np.linspace(0.0, d, n_samples)
                 qq = q + t / n
-                w, R = q_to_wR(qq, self.wl)
+                w, R = q_to_wR(qq, self.wl, n)
                 zs.append(z + t)
                 ws.append(w)
                 Rs.append(R)

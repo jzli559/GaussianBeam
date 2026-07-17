@@ -5,6 +5,8 @@ from enum import Enum
 import logging
 from abc import ABC, abstractmethod
 
+C = 299792458.0  # speed of light in vacuum (m/s, exact)
+
 # ===========================================
 # Optical Element
 # ===========================================
@@ -204,7 +206,10 @@ class Beam:
         the *current medium*, and only interface elements change it. There is
         no per-element entry index to keep consistent by hand.
 
-        :param wl: wavelength (m)
+        :param wl: vacuum wavelength (m). Internally converted to the
+            frequency ``freq = c / wl``, which is medium-independent; the
+            wavelength in the current medium is derived as
+            ``wl = c / (n * freq)`` (see the :attr:`wl` property).
         :type wl: float | sympy.Symbol
         :param w0: waist radius (m)
         :type w0: float | sympy.Symbol
@@ -229,16 +234,16 @@ class Beam:
 
         self.mode = mode
         self.elements: list[OpticalElement] = []
-        self.wl_initial: float | sp.Symbol = wl # wavelength
+        self.wl_initial: float | sp.Symbol = wl  # vacuum wavelength
         self.w0_initial: float | sp.Symbol = w0  # waist radius
-        self.wl_final: float | sp.Symbol = wl  # wavelength (constant)
+        self.freq: float | sp.Symbol = C / wl  # frequency (medium-independent)
         self.n_initial: float | sp.Symbol = n  # medium the initial beam lives in
         self.n_current: float | sp.Symbol = n  # current medium (chain state)
         self.q0_initial: complex | sp.Expr = None  # initial q parameter
         if self.mode == Mode.NUMERIC:
-            self.q0_initial = 1j * np.pi * self.w0_initial**2 / self.wl_initial
+            self.q0_initial = 1j * np.pi * self.w0_initial**2 * n / self.wl_initial
         else: # Mode.SYMBOLIC
-            self.q0_initial = sp.I * sp.pi * self.w0_initial**2 / self.wl_initial
+            self.q0_initial = sp.I * sp.pi * self.w0_initial**2 * n / self.wl_initial
 
     def copy(self) -> "Beam":
         """
@@ -384,6 +389,22 @@ class Beam:
         return qf
 
     # --- Results ---
+    #
+    # Extraction conventions (reduced-angle ABCD formalism):
+    #   1/q = 1/R - i * wl0 / (pi * n * w^2)
+    # with wl0 the vacuum wavelength and n the CURRENT medium. Hence
+    #   w^2 = -wl0 / (pi * n * Im(1/q)),   R = 1 / Re(1/q).
+
+    @property
+    def wl(self) -> float | sp.Expr:
+        """
+        Get the wavelength in the current medium, wl = c / (n * freq).
+
+        :return: wavelength in the current medium (m)
+        :rtype: float | sympy.Expr
+        """
+
+        return self.wl_initial / self.n_current
 
     @property
     def q_final(self) -> complex | sp.Expr:
@@ -413,7 +434,8 @@ class Beam:
     @property
     def zR(self) -> float | sp.Expr:
         """
-        Get the Rayleigh range after propagation through all elements.
+        Get the Rayleigh range after propagation through all elements
+        (in the final medium).
 
         :return: Rayleigh range (m)
         :rtype: float | sympy.Expr
@@ -434,23 +456,24 @@ class Beam:
         """
 
         if self.mode == Mode.NUMERIC:
-            return np.sqrt(self.wl_final * self.zR / np.pi)
+            return np.sqrt(self.wl_initial * self.zR / (np.pi * self.n_current))
         else: # Mode.SYMBOLIC
-            return sp.sqrt(self.wl_final * self.zR / sp.pi)
+            return sp.sqrt(self.wl_initial * self.zR / (sp.pi * self.n_current))
 
     @property
     def theta(self) -> float | sp.Expr:
         """
-        Get the divergence angle after propagation through all elements.
+        Get the divergence half-angle after propagation through all elements
+        (in the final medium).
 
         :return: divergence angle (rad)
         :rtype: float | sympy.Expr
         """
 
         if self.mode == Mode.NUMERIC:
-            return self.wl_final / (np.pi * self.w0)
+            return self.wl_initial / (np.pi * self.n_current * self.w0)
         else: # Mode.SYMBOLIC
-            return self.wl_final / (sp.pi * self.w0)
+            return self.wl_initial / (sp.pi * self.n_current * self.w0)
 
     @property
     def w(self) -> float | sp.Expr:
@@ -462,6 +485,6 @@ class Beam:
         """
 
         if self.mode == Mode.NUMERIC:
-            return np.sqrt(-self.wl_final / (np.pi * np.imag(1/self.q_final)))
+            return np.sqrt(-self.wl_initial / (np.pi * self.n_current * np.imag(1/self.q_final)))
         else: # Mode.SYMBOLIC
-            return sp.sqrt(-self.wl_final / (sp.pi * sp.im(1/self.q_final)))
+            return sp.sqrt(-self.wl_initial / (sp.pi * self.n_current * sp.im(1/self.q_final)))

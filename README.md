@@ -10,7 +10,9 @@ Supports both **symbolic (SymPy)** and **numeric (NumPy)** calculations, with in
 - Intuitive chain-style API.
 - The refractive index is a chain state: propagation always travels through
   the current medium and interface elements switch it — no per-element index
-  bookkeeping.
+  bookkeeping. `wl` is the vacuum wavelength; the in-medium wavelength,
+  beam radius, and divergence all follow from the (medium-independent)
+  frequency and the current medium.
 - Supports unit handling: nm, um, mm, cm, m, mrad, ...
 - **Interactive GUI** (PySide6 + pyqtgraph): design optical systems visually —
   add/insert/remove/reorder elements, edit parameters with unit selectors,
