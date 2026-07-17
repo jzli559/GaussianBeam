@@ -2,12 +2,12 @@ from gaussianbeam.raytrace.main import Beam, Mode
 from gaussianbeam.units import nm, um, mm, mrad
 
 def main():
-    beam_initial = Beam(wl=1762*nm, w0=5*um, mode=Mode.NUMERIC)
+    beam_initial = Beam(wl=1762*nm, w0=5*um, mode=Mode.NUMERIC, n=1.0)
     beam_final = (
         beam_initial.copy()
-        .prop(8*mm, 1.0)
+        .prop(8*mm)
         .lens(8*mm)
-        .prop(250*mm, 1.0)
+        .prop(250*mm)
         .lens(100*mm)
     )
 

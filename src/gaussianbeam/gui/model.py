@@ -77,11 +77,15 @@ def q_to_wR(q, wl: float):
     return w, R
 
 
-def element_matrix(spec: "ElementSpec") -> np.ndarray:
-    """Numeric ABCD matrix of an element, built with the core classes."""
-    p = spec.params
+def element_matrix(spec: "ElementSpec", params: dict) -> np.ndarray:
+    """Numeric ABCD matrix of an element, built with the core classes.
+
+    ``params`` is the chain-resolved parameter dict (media already filled
+    in from the current chain state).
+    """
+    p = params
     if spec.type == "FreeSpace":
-        return FreeSpace(p["d"], p.get("n", 1.0)).ABCD
+        return FreeSpace(p["d"], p["n"]).ABCD
     if spec.type == "ThinLens":
         return ThinLens(p["f"]).ABCD
     if spec.type == "ThickLens":
@@ -151,22 +155,28 @@ class Trace:
     wl: float
 
     def probe(self, z: float):
-        """Closed-form (w, R) at z, or None if z is outside all segments."""
+        """Closed-form (w, R, n) at z, or None if z is outside all segments."""
         for seg in self.segments:
             if seg.z0 <= z <= seg.z1:
                 q = seg.q_in + (z - seg.z0) / seg.n
                 w, R = q_to_wR(q, self.wl)
-                return float(w), float(R)
+                return float(w), float(R), float(seg.n)
         return None
 
 
 @dataclass
 class OpticalSystem:
-    """Beam parameters plus an ordered list of optical elements."""
+    """Beam parameters plus an ordered list of optical elements.
+
+    ``n0`` is the refractive index of the medium the initial beam lives in.
+    The medium is a chain state (mirroring the core Beam): free space and
+    thick lenses sit in the current medium, interfaces switch it to n2.
+    """
 
     wl: float = 632.8e-9
     w0: float = 0.3e-3
     elements: list = field(default_factory=list)
+    n0: float = 1.0
 
     @classmethod
     def default(cls) -> "OpticalSystem":
@@ -175,7 +185,7 @@ class OpticalSystem:
             elements=[
                 ElementSpec.create("FreeSpace"),
                 ElementSpec("ThinLens", {"f": 50e-3}),
-                ElementSpec("FreeSpace", {"d": 150e-3, "n": 1.0}),
+                ElementSpec("FreeSpace", {"d": 150e-3}),
             ],
         )
 
@@ -183,19 +193,19 @@ class OpticalSystem:
 
     def build_beam(self) -> Beam:
         """Rebuild a numeric core Beam from the element list."""
-        beam = Beam(self.wl, self.w0)
+        beam = Beam(self.wl, self.w0, n=self.n0)
         for spec in self.elements:
             p = spec.params
             if spec.type == "FreeSpace":
-                beam.prop(p["d"], p.get("n", 1.0))
+                beam.prop(p["d"])
             elif spec.type == "ThinLens":
                 beam.lens(p["f"])
             elif spec.type == "ThickLens":
-                beam.thick_lens(p["n0"], p["n"], p["R1"], p["R2"], p["t"])
+                beam.thick_lens(p["n"], p["R1"], p["R2"], p["t"])
             elif spec.type == "CurvedInterface":
-                beam.curved_interface(p["n1"], p["n2"], p.get("R", np.inf))
+                beam.curved_interface(p["n2"], p.get("R", np.inf))
             elif spec.type == "FlatInterface":
-                beam.flat_interface(p["n1"], p["n2"])
+                beam.flat_interface(p["n2"])
         return beam
 
     def trace(self, n_samples: int = 200) -> Trace:
@@ -205,12 +215,25 @@ class OpticalSystem:
         """
         q = 1j * np.pi * self.w0**2 / self.wl  # waist at z = 0
         z = 0.0
+        n_cur = self.n0  # current medium (mirrors the core chain state)
         zs, ws, Rs = [], [], []
         segments, markers = [], []
 
-        for spec in self.elements:
+        def resolve(spec):
+            """Params with the media filled in from the chain state."""
+            p = dict(spec.params)
             if spec.type == "FreeSpace":
-                d, n = spec.params["d"], spec.params.get("n", 1.0)
+                p["n"] = n_cur
+            elif spec.type == "ThickLens":
+                p["n0"] = n_cur
+            elif spec.type in ("CurvedInterface", "FlatInterface"):
+                p["n1"] = n_cur
+            return p
+
+        for spec in self.elements:
+            p = resolve(spec)
+            if spec.type == "FreeSpace":
+                d, n = p["d"], n_cur
                 t = np.linspace(0.0, d, n_samples)
                 qq = q + t / n
                 w, R = q_to_wR(qq, self.wl)
@@ -221,14 +244,16 @@ class OpticalSystem:
                 z += d
                 q = q + d / n
             elif spec.type == "ThickLens":
-                t = spec.params["t"]
+                t = p["t"]
                 markers.append(Marker(z, z + t, spec.summary(), "thick"))
-                q = _mobius(element_matrix(spec), q)
+                q = _mobius(element_matrix(spec, p), q)
                 z += t
             else:
                 kind = "lens" if spec.type == "ThinLens" else "interface"
                 markers.append(Marker(z, z, spec.summary(), kind))
-                q = _mobius(element_matrix(spec), q)
+                q = _mobius(element_matrix(spec, p), q)
+                if spec.type in ("CurvedInterface", "FlatInterface"):
+                    n_cur = p["n2"]
 
         beam = self.build_beam()
         final = {
@@ -260,7 +285,7 @@ class OpticalSystem:
 
         return {
             "version": 1,
-            "beam": {"wl": self.wl, "w0": self.w0},
+            "beam": {"wl": self.wl, "w0": self.w0, "n": self.n0},
             "elements": [
                 {"type": s.type, "params": {k: enc(v) for k, v in s.params.items()}}
                 for s in self.elements
@@ -278,7 +303,8 @@ class OpticalSystem:
 
         beam = data.get("beam", {})
         system = cls(wl=float(beam.get("wl", 632.8e-9)),
-                     w0=float(beam.get("w0", 0.3e-3)))
+                     w0=float(beam.get("w0", 0.3e-3)),
+                     n0=float(beam.get("n", 1.0)))
         for e in data.get("elements", []):
             spec = ElementSpec.create(e["type"])
             for k, v in e.get("params", {}).items():

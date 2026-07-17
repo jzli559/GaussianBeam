@@ -222,10 +222,13 @@ class MainWindow(QMainWindow):
         form = QFormLayout(box)
         self.row_wl = ParamRow(ParamSpec("wl", "Wavelength wl", "length", 0.0), self.system.wl)
         self.row_w0 = ParamRow(ParamSpec("w0", "Waist radius w0", "length", 0.0), self.system.w0)
+        self.row_n = ParamRow(ParamSpec("n", "Medium index n", "index", 0.0), self.system.n0)
         self.row_wl.changed.connect(self._on_beam_param)
         self.row_w0.changed.connect(self._on_beam_param)
+        self.row_n.changed.connect(self._on_beam_param)
         form.addRow("Wavelength wl", self.row_wl)
         form.addRow("Waist radius w0", self.row_w0)
+        form.addRow("Medium index n", self.row_n)
         return box
 
     def _build_element_group(self):
@@ -274,7 +277,8 @@ class MainWindow(QMainWindow):
         self.lbl_z = QLabel("z = —")
         self.lbl_w = QLabel("w(z) = —")
         self.lbl_R = QLabel("R(z) = —")
-        for lbl in (self.lbl_z, self.lbl_w, self.lbl_R):
+        self.lbl_n = QLabel("n = —")
+        for lbl in (self.lbl_z, self.lbl_w, self.lbl_R, self.lbl_n):
             layout.addWidget(lbl)
         return box
 
@@ -338,6 +342,7 @@ class MainWindow(QMainWindow):
     def _on_beam_param(self):
         self.system.wl = self.row_wl.value()
         self.system.w0 = self.row_w0.value()
+        self.system.n0 = self.row_n.value()
         self.refresh_plot()
         self.refresh_results()
 
@@ -484,7 +489,7 @@ class MainWindow(QMainWindow):
         if res is None:
             self._clear_probe()
             return
-        w, R = res
+        w, R, n = res
         self.probe_line.setVisible(True)
         self.probe_line.setPos(z)
         self.probe_pts.setData([z, z], [w, -w])
@@ -496,6 +501,7 @@ class MainWindow(QMainWindow):
             direction = "diverging" if R > 0 else "converging"
             r_text = f"{format_length(R)} ({direction})"
         self.lbl_R.setText(f"R(z) = {r_text}")
+        self.lbl_n.setText(f"n = {n:.4g}")
 
     def _clear_probe(self):
         if not hasattr(self, "probe_line"):
@@ -505,6 +511,7 @@ class MainWindow(QMainWindow):
         self.lbl_z.setText("z = —")
         self.lbl_w.setText("w(z) = —")
         self.lbl_R.setText("R(z) = —")
+        self.lbl_n.setText("n = —")
 
     # ------------------------------------------------------------------
     # Config save / load
@@ -534,6 +541,7 @@ class MainWindow(QMainWindow):
             return
         self.row_wl.set_value(self.system.wl)
         self.row_w0.set_value(self.system.w0)
+        self.row_n.set_value(self.system.n0)
         self.refresh_all(select=0)
 
 

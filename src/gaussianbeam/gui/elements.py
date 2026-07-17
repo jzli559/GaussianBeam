@@ -39,7 +39,6 @@ ELEMENT_TYPES = {
             "FreeSpace", "Free space (FreeSpace)",
             (
                 ParamSpec("d", "Length d", "length", 50e-3),
-                ParamSpec("n", "Refractive index n", "index", 1.0),
             ),
         ),
         ElementTypeSpec(
@@ -51,7 +50,6 @@ ELEMENT_TYPES = {
         ElementTypeSpec(
             "ThickLens", "Thick lens (ThickLens)",
             (
-                ParamSpec("n0", "Index outside n0", "index", 1.0),
                 ParamSpec("n", "Lens index n", "index", 1.5),
                 ParamSpec("R1", "Front radius R1", "length", 50e-3, allow_inf=True),
                 ParamSpec("R2", "Back radius R2", "length", -50e-3, allow_inf=True),
@@ -61,7 +59,6 @@ ELEMENT_TYPES = {
         ElementTypeSpec(
             "CurvedInterface", "Curved interface",
             (
-                ParamSpec("n1", "Index before n1", "index", 1.0),
                 ParamSpec("n2", "Index after n2", "index", 1.5),
                 ParamSpec("R", "Radius R", "length", float("inf"), allow_inf=True),
             ),
@@ -69,7 +66,6 @@ ELEMENT_TYPES = {
         ElementTypeSpec(
             "FlatInterface", "Flat interface",
             (
-                ParamSpec("n1", "Index before n1", "index", 1.0),
                 ParamSpec("n2", "Index after n2", "index", 1.5),
             ),
         ),

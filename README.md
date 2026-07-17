@@ -8,6 +8,9 @@ Supports both **symbolic (SymPy)** and **numeric (NumPy)** calculations, with in
 - Numeric and symbolic Gaussian beam propagation.
 - Abstracted optical elements: free space propagation, lenses, etc.
 - Intuitive chain-style API.
+- The refractive index is a chain state: propagation always travels through
+  the current medium and interface elements switch it — no per-element index
+  bookkeeping.
 - Supports unit handling: nm, um, mm, cm, m, mrad, ...
 - **Interactive GUI** (PySide6 + pyqtgraph): design optical systems visually —
   add/insert/remove/reorder elements, edit parameters with unit selectors,

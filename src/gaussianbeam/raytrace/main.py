@@ -193,11 +193,16 @@ class ThickLens(OpticalElement):
 class Beam:
     def __init__(self, wl: float | sp.Symbol,
                  w0: float | sp.Symbol,
-                 mode: Mode = Mode.NUMERIC):
+                 mode: Mode = Mode.NUMERIC,
+                 n: float | sp.Symbol = 1.0003):
         """
         Initialize a Gaussian beam.
 
         :math:`q(z) = z + i z_R`
+
+        The refractive index is a **chain state**: ``prop()`` travels through
+        the *current medium*, and only interface elements change it. There is
+        no per-element entry index to keep consistent by hand.
 
         :param wl: wavelength (m)
         :type wl: float | sympy.Symbol
@@ -207,6 +212,9 @@ class Beam:
         :type theta: float | sympy.Symbol
         :param mode: numeric or symbolic
         :type mode: Mode
+        :param n: refractive index of the medium the initial beam lives in
+            (default: air, 1.0003)
+        :type n: float | sympy.Symbol
         """
 
         assert isinstance(mode, Mode), "mode must be an instance of Mode Enum"
@@ -224,6 +232,8 @@ class Beam:
         self.wl_initial: float | sp.Symbol = wl # wavelength
         self.w0_initial: float | sp.Symbol = w0  # waist radius
         self.wl_final: float | sp.Symbol = wl  # wavelength (constant)
+        self.n_initial: float | sp.Symbol = n  # medium the initial beam lives in
+        self.n_current: float | sp.Symbol = n  # current medium (chain state)
         self.q0_initial: complex | sp.Expr = None  # initial q parameter
         if self.mode == Mode.NUMERIC:
             self.q0_initial = 1j * np.pi * self.w0_initial**2 / self.wl_initial
@@ -238,34 +248,32 @@ class Beam:
         :rtype: Beam
         """
 
-        new_beam = Beam(self.wl_initial, self.w0_initial, self.mode)
+        new_beam = Beam(self.wl_initial, self.w0_initial, self.mode, n=self.n_initial)
         new_beam.elements = self.elements.copy()
+        new_beam.n_current = self.n_current
         return new_beam
 
     # --- Elements ---
 
-    def prop(self, d: float | sp.Symbol, n: float | sp.Symbol=1.0003) -> "Beam":
+    def prop(self, d: float | sp.Symbol) -> "Beam":
         """
-        Propagate through free space.
+        Propagate a distance ``d`` through the current medium.
 
         :param d: distance (m)
         :type d: float | sympy.Symbol
-        :param n: refractive index
-        :type n: float | sympy.Symbol
         :return: self
         :rtype: Beam
         """
 
-        self.elements.append(FreeSpace(d, n, self.mode))
+        self.elements.append(FreeSpace(d, self.n_current, self.mode))
         return self
 
-    def curved_interface(self, n1: float | sp.Symbol, n2: float | sp.Symbol,
+    def curved_interface(self, n2: float | sp.Symbol,
                   R: float | sp.Symbol = np.inf) -> "Beam":
         """
-        Add a curved interface.
+        Add a curved interface from the current medium into ``n2``.
+        The current medium becomes ``n2`` afterwards.
 
-        :param n1: refractive index before interface
-        :type n1: float | sympy.Symbol
         :param n2: refractive index after interface
         :type n2: float | sympy.Symbol
         :param R: radius of curvature (m), positive if center is after interface
@@ -274,37 +282,36 @@ class Beam:
         :rtype: Beam
         """
 
-        self.elements.append(CurvedInterface(n1, n2, R, self.mode))
+        self.elements.append(CurvedInterface(self.n_current, n2, R, self.mode))
+        self.n_current = n2
         return self
 
-    def flat_interface(self, n1: float | sp.Symbol, n2: float | sp.Symbol) -> "Beam":
+    def flat_interface(self, n2: float | sp.Symbol) -> "Beam":
         """
-        Add a flat interface.
+        Add a flat interface from the current medium into ``n2``.
+        The current medium becomes ``n2`` afterwards.
 
-        :param n1: refractive index before interface
-        :type n1: float | sympy.Symbol
         :param n2: refractive index after interface
         :type n2: float | sympy.Symbol
         :return: self
         :rtype: Beam
         """
 
-        self.elements.append(FlatInterface(n1, n2, self.mode))
+        self.elements.append(FlatInterface(self.n_current, n2, self.mode))
+        self.n_current = n2
         return self
 
-    def interface(self, n1: float | sp.Symbol, n2: float | sp.Symbol) -> "Beam":
+    def interface(self, n2: float | sp.Symbol) -> "Beam":
         """
         Add a flat interface (alias for `self.flat_interface`).
 
-        :param n1: refractive index before interface
-        :type n1: float | sympy.Symbol
         :param n2: refractive index after interface
         :type n2: float | sympy.Symbol
         :return: self
         :rtype: Beam
         """
 
-        return self.flat_interface(n1, n2)
+        return self.flat_interface(n2)
 
     def thin_lens(self, f: float | sp.Symbol) -> "Beam":
         """
@@ -331,14 +338,12 @@ class Beam:
 
         return self.thin_lens(f)
 
-    def thick_lens(self, n0: float | sp.Symbol, n: float | sp.Symbol,
+    def thick_lens(self, n: float | sp.Symbol,
                    R1: float | sp.Symbol, R2: float | sp.Symbol,
                    t: float | sp.Symbol) -> "Beam":
         """
-        Add a thick lens.
+        Add a thick lens immersed in the current medium (unchanged afterwards).
 
-        :param n0: refractive index outside the lens
-        :type n0: float | sympy.Symbol
         :param n: refractive index of the lens itself
         :type n: float | sympy.Symbol
         :param R1: radius of curvature of first surface (m), positive if center is after surface
@@ -351,7 +356,7 @@ class Beam:
         :rtype: Beam
         """
 
-        self.elements.append(ThickLens(n0, n, R1, R2, t, self.mode))
+        self.elements.append(ThickLens(self.n_current, n, R1, R2, t, self.mode))
         return self
 
     # --- Computation ---
