@@ -182,12 +182,16 @@ class OpticalSystem:
 
     @classmethod
     def default(cls) -> "OpticalSystem":
-        """A small demo system: collimate, focus, propagate."""
+        """The same demo system as examples/numeric_demo.py."""
         return cls(
+            wl=1762e-9,
+            w0=5e-6,
+            n0=1.0,
             elements=[
-                ElementSpec.create("FreeSpace"),
-                ElementSpec("ThinLens", {"f": 50e-3}),
-                ElementSpec("FreeSpace", {"d": 150e-3}),
+                ElementSpec("FreeSpace", {"d": 8e-3}),
+                ElementSpec("ThinLens", {"f": 8e-3}),
+                ElementSpec("FreeSpace", {"d": 250e-3}),
+                ElementSpec("ThinLens", {"f": 100e-3}),
             ],
         )
 
