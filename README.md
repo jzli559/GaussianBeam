@@ -67,6 +67,8 @@ gaussianbeam-gui
 python examples/gui_demo.py
 ```
 
+![GUI demo: hover probe, live parameter editing, element add/reorder, and Ctrl+drag of elements along z](doc/gui_demo.gif)
+
 - **Elements panel** — add / insert / remove elements (free space, thin & thick
   lenses, curved & flat interfaces), reorder them, and edit parameters with
   SI-unit selectors (radii accept ∞).
